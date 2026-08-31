@@ -58,6 +58,7 @@ func TestStripMavenReleaseVersion(t *testing.T) {
 		version string
 		want    string
 	}{
+		// Legacy format tests
 		{
 			name:    "release suffix in version",
 			version: "5.3.18.rhlw-00003",
@@ -77,6 +78,32 @@ func TestStripMavenReleaseVersion(t *testing.T) {
 			name:    "empty version",
 			version: "",
 			want:    "",
+		},
+		// New format tests
+		{
+			name:    "baseline only",
+			version: "1.2.3-rhlw.00003",
+			want:    "1.2.3",
+		},
+		{
+			name:    "baseline with novel",
+			version: "1.2.3-rhlw.00003.n00001",
+			want:    "1.2.3",
+		},
+		{
+			name:    "baseline with hotfix",
+			version: "1.2.3-rhlw.00003.hf00001",
+			want:    "1.2.3",
+		},
+		{
+			name:    "baseline with novel and hotfix",
+			version: "1.2.3-rhlw.00003.n00001.hf00002",
+			want:    "1.2.3",
+		},
+		{
+			name:    "snapshot version not stripped",
+			version: "1.2.3-SNAPSHOT",
+			want:    "1.2.3-SNAPSHOT",
 		},
 	}
 
@@ -167,6 +194,7 @@ func TestExtractRelease(t *testing.T) {
 		filename string
 		want     string
 	}{
+		// Legacy format tests
 		{
 			name:     "release suffix in pom filename",
 			filename: "smallrye-mutiny-vertx-core-3.16.0.rhlw-3002.pom",
@@ -181,6 +209,27 @@ func TestExtractRelease(t *testing.T) {
 			name:     "empty filename",
 			filename: "",
 			want:     "",
+		},
+		// New format tests
+		{
+			name:     "baseline only",
+			filename: "artifact-1.2.3-rhlw.00003.pom",
+			want:     "rhlw.00003",
+		},
+		{
+			name:     "baseline with novel",
+			filename: "artifact-1.2.3-rhlw.00003.n00001.pom",
+			want:     "rhlw.00003.n00001",
+		},
+		{
+			name:     "baseline with hotfix",
+			filename: "artifact-1.2.3-rhlw.00003.hf00001.pom",
+			want:     "rhlw.00003.hf00001",
+		},
+		{
+			name:     "baseline with novel and hotfix",
+			filename: "artifact-1.2.3-rhlw.00003.n00001.hf00002.pom",
+			want:     "rhlw.00003.n00001.hf00002",
 		},
 	}
 

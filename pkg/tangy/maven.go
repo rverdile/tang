@@ -135,10 +135,10 @@ func (t *tangyImpl) MavenPackageList(ctx context.Context, repositoryHref string,
 			SELECT
 				rp.group_id,
 				rp.artifact_id,
-				regexp_replace(rp.version, '\.` + mavenReleaseQualifierPattern + `$', '') as base_version,
+				regexp_replace(rp.version, '` + mavenReleaseVersionSuffixPattern + `', '') as base_version,
 				rp.filename,
 				cc.pulp_created,
-				ROW_NUMBER() OVER (PARTITION BY rp.group_id, rp.artifact_id, regexp_replace(rp.version, '\.` + mavenReleaseQualifierPattern + `$', '') ORDER BY cc.pulp_created DESC) as rn
+				ROW_NUMBER() OVER (PARTITION BY rp.group_id, rp.artifact_id, regexp_replace(rp.version, '` + mavenReleaseVersionSuffixPattern + `', '') ORDER BY cc.pulp_created DESC) as rn
 			FROM maven_mavenartifact rp
 			INNER JOIN core_content cc ON rp.content_ptr_id = cc.pulp_id
 		` + innerUnion + artifactFilters + `
@@ -240,11 +240,20 @@ func (t *tangyImpl) MavenPackageList(ctx context.Context, repositoryHref string,
 	}, nil
 }
 
-const mavenReleaseQualifierPattern = `[a-zA-Z]+-\d+`
+// OLD format: .rhlw-00003 (dot before "rhlw", hyphen before digits)
+const mavenLegacyReleasePattern = `[a-zA-Z]+-\d+`
 
-const mavenReleaseVersionSuffixPattern = `\.` + mavenReleaseQualifierPattern + `$`
+// NEW format: -rhlw.00003[.n00001][.hf00001] (hyphen before "rhlw", dot separators)
+// Matches: -rhlw.NNNNN or -rhlw.NNNNN.nNNNNN or -rhlw.NNNNN.hfNNNNN or -rhlw.NNNNN.nNNNNN.hfNNNNN
+const mavenNewReleasePattern = `rhlw\.\d+(?:\.(?:n|hf)\d+)*`
 
-const mavenReleaseFilenamePattern = `\.(` + mavenReleaseQualifierPattern + `)\.pom$`
+// Combined pattern for version suffix: matches either old OR new format
+// OLD: .rhlw-00003 or NEW: -rhlw.00003.n00001
+const mavenReleaseVersionSuffixPattern = `(?:\.` + mavenLegacyReleasePattern + `|-` + mavenNewReleasePattern + `)$`
+
+// Combined pattern for filename extraction
+// OLD: .rhlw-00003.pom or NEW: -rhlw.00003.n00001.pom
+const mavenReleaseFilenamePattern = `(\.` + mavenLegacyReleasePattern + `|-` + mavenNewReleasePattern + `)\.pom$`
 
 var mavenReleaseVersionSuffixRegexp = regexp.MustCompile(mavenReleaseVersionSuffixPattern)
 
@@ -257,11 +266,18 @@ func stripMavenReleaseVersion(version string) string {
 }
 
 // extractRelease extracts the release version from a filename
-// Example: smallrye-mutiny-vertx-core-3.16.0.rhlw-3002.pom -> rhlw-3002
+// Examples:
+//   - smallrye-mutiny-vertx-core-3.16.0.rhlw-3002.pom -> rhlw-3002 (OLD)
+//   - artifact-1.2.3-rhlw.00003.n00001.pom -> rhlw.00003.n00001 (NEW)
 func extractRelease(filename string) string {
 	matches := mavenReleaseFilenameRegexp.FindStringSubmatch(filename)
 	if len(matches) > 1 {
-		return matches[1]
+		// Remove leading dot or hyphen from captured group
+		release := matches[1]
+		if len(release) > 0 && (release[0] == '.' || release[0] == '-') {
+			return release[1:]
+		}
+		return release
 	}
 	return ""
 }
@@ -355,7 +371,7 @@ func (t *tangyImpl) MavenVersionsList(ctx context.Context, repositoryHref, group
 	}
 	if version != "" {
 		args["version"] = version
-		whereClause += "\n\t\tAND regexp_replace(rp.version, '\\." + mavenReleaseQualifierPattern + "$', '') = @version"
+		whereClause += "\n\t\tAND regexp_replace(rp.version, '" + strings.ReplaceAll(mavenReleaseVersionSuffixPattern, `\`, `\\`) + "', '') = @version"
 	}
 
 	innerUnion, err := contentIdsInVersions(ctx, conn, repoVerMap, &args)
@@ -368,7 +384,7 @@ func (t *tangyImpl) MavenVersionsList(ctx context.Context, repositoryHref, group
 
 	// Count query for total distinct versions
 	countQuery := `
-		SELECT COUNT(DISTINCT (rp.group_id, rp.artifact_id, regexp_replace(rp.version, '\.` + mavenReleaseQualifierPattern + `$', '')))
+		SELECT COUNT(DISTINCT (rp.group_id, rp.artifact_id, regexp_replace(rp.version, '` + mavenReleaseVersionSuffixPattern + `', '')))
 		FROM maven_mavenartifact rp
 	` + innerUnion + whereClause + pomFilter
 
@@ -386,7 +402,7 @@ func (t *tangyImpl) MavenVersionsList(ctx context.Context, repositoryHref, group
 			SELECT
 				rp.group_id,
 				rp.artifact_id,
-				regexp_replace(rp.version, '\.` + mavenReleaseQualifierPattern + `$', '') as base_version,
+				regexp_replace(rp.version, '` + mavenReleaseVersionSuffixPattern + `', '') as base_version,
 				rp.filename,
 				cc.pulp_created as created_at
 			FROM maven_mavenartifact rp
